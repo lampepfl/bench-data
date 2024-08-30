@@ -319,13 +319,6 @@ const movingAverageWindow = 10;
  * }} AggregatedData
  */
 
-/**
- * Cache for `loadAggregatedData`.
- *
- * @type {Map<string, AggregatedData>}
- */
-const aggregatedDataCache = new Map();
-
 /** Loads aggregated data for the benchmark with the given ID. This function is
  * memoized.
  *
@@ -333,46 +326,46 @@ const aggregatedDataCache = new Map();
  * @param {"all"|"last100"} filter Filter to apply.
  * @returns {Promise<AggregatedData>} Aggregated data columns.
  */
-async function loadAggregatedData(id, filter) {
-  const path = `data/aggregated/${filter}/${id}.csv`;
-  const cached = aggregatedDataCache.get(path);
-  if (cached !== undefined) return cached;
+const loadAggregatedData = memo(
+  async function (id, filter) {
+    console.log("Loading aggregated data for", id, filter);
+    const path = `data/aggregated/${filter}/${id}.csv`;
+    const response = await fetch(path);
+    const data = await response.text();
+    const times = [];
+    const commits = [];
+    const prs = [];
+    const mins = [];
+    const medians = [];
+    const maxs = [];
 
-  const response = await fetch(path);
-  const data = await response.text();
-  const times = [];
-  const commits = [];
-  const prs = [];
-  const mins = [];
-  const medians = [];
-  const maxs = [];
-
-  for (const line of data.split("\n")) {
-    const [time, commit, pr, min, median, max] = line.split(",");
-    if (line === "") continue;
-    times.push(time);
-    commits.push(commit);
-    prs.push(pr);
-    mins.push(Number(median) - Number(min));
-    maxs.push(Number(max) - Number(median));
-    medians.push(Number(median));
-  }
-
-  const indices = times.map((_, i) => i);
-  const movingAverage = indices.map((i) => {
-    let sum = 0;
-    let count = 0;
-    for (let j = Math.max(0, i - movingAverageWindow + 1); j <= i; j++) {
-      sum += medians[j];
-      count++;
+    for (const line of data.split("\n")) {
+      const [time, commit, pr, min, median, max] = line.split(",");
+      if (line === "") continue;
+      times.push(time);
+      commits.push(commit);
+      prs.push(pr);
+      mins.push(Number(median) - Number(min));
+      maxs.push(Number(max) - Number(median));
+      medians.push(Number(median));
     }
-    return sum / count;
-  });
 
-  const res = { indices, times, commits, prs, mins, medians, maxs, movingAverage };
-  aggregatedDataCache.set(path, res);
-  return res;
-}
+    const indices = times.map((_, i) => i);
+    const movingAverage = indices.map((i) => {
+      let sum = 0;
+      let count = 0;
+      for (let j = Math.max(0, i - movingAverageWindow + 1); j <= i; j++) {
+        sum += medians[j];
+        count++;
+      }
+      return sum / count;
+    });
+
+    const res = { indices, times, commits, prs, mins, medians, maxs, movingAverage };
+    return res;
+  },
+  ([id, filter]) => `${id}-${filter}`
+);
 
 /**
  * Slices aggregated data, keeping only points starting from the `n`-th one to
@@ -526,35 +519,27 @@ async function renderComparisonGraph(commits) {
   Plotly.react("compare", traces, layout);
 }
 
-/** Cache for `loadDetailedData`.
- *
- * @type {Map<string, DetailedData>}
- */
-const detailedDataCache = new Map();
-
 /**
  * Loads detailed data for the given commit. This function is memoized.
  *
  * @param {string} commit Commit hash.
  * @returns {Promise<DetailedData>}
  */
-async function loadDetailedData(commit) {
-  const cached = detailedDataCache.get(commit);
-  if (cached !== undefined) return cached;
-
-  const response = await fetch(`data/detailed/${commit}.csv`);
-  const data = await response.text();
-  const res = new Map();
-
-  for (const line of data.split("\n")) {
-    const [benchmark, benchmarkTimes, warmup, values] = line.split(",");
-    if (line === "") continue;
-    res.set(benchmark, values.split(" ").map(Number));
-  }
-
-  detailedDataCache.set(commit, res);
-  return res;
-}
+const loadDetailedData = memo(
+  async function (commit) {
+    console.log("Loading detailed data for", commit);
+    const response = await fetch(`data/detailed/${commit}.csv`);
+    const data = await response.text();
+    const res = new Map();
+    for (const line of data.split("\n")) {
+      const [benchmark, , , values] = line.split(",");
+      if (line === "") continue;
+      res.set(benchmark, values.split(" ").map(Number));
+    }
+    return res;
+  },
+  ([commit]) => commit
+);
 
 /**
  * Calculates the median of an array of numbers.
@@ -566,4 +551,24 @@ function median(numbers) {
   numbers.sort((a, b) => a - b);
   const mid = Math.floor(numbers.length / 2);
   return numbers.length % 2 !== 0 ? numbers[mid] : (numbers[mid - 1] + numbers[mid]) / 2;
+}
+
+/**
+ * Memoize the given function.
+ * @param {*} fn Function to memoize
+ * @param {*} keyFn Function to generate the cache key from the arguments
+ * @returns {function} Memoized function
+ */
+function memo(fn, keyFn) {
+  const cache = new Map();
+  return function (...args) {
+    const key = keyFn(args);
+    if (cache.has(key)) {
+      return cache.get(key);
+    } else {
+      const result = fn(...args);
+      cache.set(key, result);
+      return result;
+    }
+  };
 }
