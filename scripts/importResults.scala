@@ -4,27 +4,42 @@ import com.github.tototoshi.csv.CSVWriter
 case class JMHResults(benchmark: String, warmup: Seq[Double], measures: Seq[Double])
 
 @main def importResults(
-    pr: String,
-    merged: String,
-    commitTime: String,
+    prString: String,
+    mergedString: String,
+    commitTimeString: String,
     commit: String,
-    benchTimeRaw: String,
-    jmhOutputPath: String,
-    dataCsvPath: String
+    benchTimeString: String,
+    jmhOutput: String,
+    dataCsv: String
 ): Unit =
-  if !os.exists(os.Path(dataCsvPath, os.pwd)) then
-    throw new IllegalArgumentException(s"`$dataCsvPath` not found.")
+  println(s"pr: $prString")
+  println(s"merged: $mergedString")
+  println(s"commitTime: $commitTimeString")
+  println(s"commit: $commit")
+  println(s"benchTime: $benchTimeString")
+  println(s"jmhOutputPath: $jmhOutput")
+  println(s"dataCsvPath: $dataCsv")
+  println(s"pwd: ${os.pwd}")
 
-  val benchTime = if benchTimeRaw == "now" then java.time.Instant.now().toString() else benchTimeRaw
-  val writer = CSVWriter.open(dataCsvPath, append = true)
+  val pr = prString.toInt
+  val merged = mergedString.toBoolean
+  val commitTime = ZonedDateTime.parse(commitTimeString)
+  val benchTime = ZonedDateTime.parse(benchTimeString)
+  val jmhOutputPath = os.Path(jmhOutput, os.pwd)
+  val dataCsvPath = os.Path(dataCsv, os.pwd)
+  assert(os.exists(jmhOutputPath), s"`$jmhOutputPath` not found.")
+  assert(os.exists(dataCsvPath), s"`$dataCsvPath` not found.")
+
+  val writer = CSVWriter.open(dataCsvPath.toString(), append = true)
   for jmhResults <- readJMHResults(jmhOutputPath) do
+    println(s"Write results for benchmark `${jmhResults.benchmark}`")
     val resultsRow = Results(
       jmhResults.benchmark,
-      pr.toInt,
-      merged.toBoolean,
-      ZonedDateTime.parse(commitTime),
+      pr,
+      merged,
+      commitTime,
       commit,
-      ZonedDateTime.parse(benchTime),
+      benchTime,
       jmhResults.warmup,
       jmhResults.measures
     ).toCSVRow()
@@ -32,11 +47,11 @@ case class JMHResults(benchmark: String, warmup: Seq[Double], measures: Seq[Doub
   writer.close()
 
 /** Reads results from a JMH text output file. */
-def readJMHResults(jmhOutputPath: String): Seq[JMHResults] =
+def readJMHResults(jmhOutputPath: os.Path): Seq[JMHResults] =
   val benchmarkPrefix = "# Benchmark: "
   val warmupPrefix = "# Warmup Iteration"
   val measurePrefix = "Iteration "
-  val lines = os.read.lines(os.Path(jmhOutputPath, os.pwd))
+  val lines = os.read.lines(jmhOutputPath)
   val results = collection.mutable.ArrayBuffer.empty[JMHResults]
   var benchmark = ""
   var warmup = collection.mutable.ArrayBuffer.empty[Double]

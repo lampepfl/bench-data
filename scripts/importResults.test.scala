@@ -16,7 +16,7 @@ class ImporterSuite extends munit.FunSuite:
 
   test("readResultsExample1"):
     assertEquals(
-      readJMHResults("scripts/tests/example_jmh_output_1.txt"),
+      readJMHResults(os.Path("scripts/tests/example_jmh_output_1.txt", os.pwd)),
       List(
         JMHResults("implicitCacheBootstrapped", List(562.817, 386.297, 365.383), List(366.542, 390.866, 352.338)),
         JMHResults("implicitCacheTasty", List(899.944, 687.595, 625.322), List(616.428, 551.615, 552.089)),
